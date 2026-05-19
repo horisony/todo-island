@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tauri::{Emitter, Manager};
+
+use tauri::{Emitter, AppHandle, State};
 use tokio::sync::RwLock;
+use std::sync::Arc;
 
 pub type SharedTodoState = Arc<RwLock<TodoState>>;
 
@@ -55,16 +56,14 @@ fn save_todos(state: &TodoState) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-async fn get_todos(state: tauri::State<'_, SharedTodoState>) -> Result<Vec<TodoItem>, String> {
+pub async fn get_todos(state: State<'_, SharedTodoState>) -> Result<Vec<TodoItem>, String> {
     let s = state.read().await;
     Ok(s.todos.clone())
 }
 
-#[tauri::command]
-async fn add_todo(
-    state: tauri::State<'_, SharedTodoState>,
-    app: tauri::AppHandle,
+pub async fn add_todo(
+    state: State<'_, SharedTodoState>,
+    app: AppHandle,
     text: String,
 ) -> Result<TodoItem, String> {
     let todo = TodoItem {
@@ -82,10 +81,9 @@ async fn add_todo(
     Ok(todo)
 }
 
-#[tauri::command]
-async fn toggle_todo(
-    state: tauri::State<'_, SharedTodoState>,
-    app: tauri::AppHandle,
+pub async fn toggle_todo(
+    state: State<'_, SharedTodoState>,
+    app: AppHandle,
     id: String,
 ) -> Result<TodoItem, String> {
     let mut updated = None;
@@ -101,10 +99,9 @@ async fn toggle_todo(
     updated.ok_or_else(|| "Todo not found".to_string())
 }
 
-#[tauri::command]
-async fn delete_todo(
-    state: tauri::State<'_, SharedTodoState>,
-    app: tauri::AppHandle,
+pub async fn delete_todo(
+    state: State<'_, SharedTodoState>,
+    app: AppHandle,
     id: String,
 ) -> Result<(), String> {
     {
@@ -116,10 +113,9 @@ async fn delete_todo(
     Ok(())
 }
 
-#[tauri::command]
-async fn clear_completed(
-    state: tauri::State<'_, SharedTodoState>,
-    app: tauri::AppHandle,
+pub async fn clear_completed(
+    state: State<'_, SharedTodoState>,
+    app: AppHandle,
 ) -> Result<usize, String> {
     let before = {
         let mut s = state.write().await;
@@ -134,11 +130,4 @@ async fn clear_completed(
 
 pub fn make_state() -> SharedTodoState {
     Arc::new(RwLock::new(load_todos()))
-}
-
-pub fn register(handler: &tauri::Builder<tauri::Wry>) -> impl FnOnce(tauri::app::Setup<tauri::Wry>) + Send + 'static {
-    move |_app| {
-        let state = make_state();
-        _app.manage(state);
-    }
 }
