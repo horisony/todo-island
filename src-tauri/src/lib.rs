@@ -6,6 +6,7 @@ mod sound;
 mod platform;
 mod updater;
 mod ssh_remote;
+mod todo;
 
 use sessions::SessionStore;
 use socket::SocketServer;
@@ -185,6 +186,7 @@ pub fn run() {
 
     let config = AppConfig::load().unwrap_or_default();
     let sound = SoundManager::from_config(&config.sound);
+    let todo_state = todo::make_state();
     let state: SharedState = Arc::new(RwLock::new(AppState {
         sessions: SessionStore::new(),
         config,
@@ -204,6 +206,7 @@ pub fn run() {
             Some(vec![]),
         ))
         .manage(state.clone())
+        .manage(todo_state)
         .manage(std::sync::Mutex::<Option<updater::PendingUpdate>>::new(None))
         .invoke_handler(tauri::generate_handler![
             get_sessions,
@@ -223,6 +226,11 @@ pub fn run() {
             ssh_list_remotes,
             updater::check_for_update,
             updater::install_update,
+            todo::get_todos,
+            todo::add_todo,
+            todo::toggle_todo,
+            todo::delete_todo,
+            todo::clear_completed,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

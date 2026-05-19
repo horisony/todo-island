@@ -1,94 +1,33 @@
 import { useEffect, useRef, useState } from "react";
-import { useStore } from "./store/useStore";
-import { NotchPanel } from "./components/notch/NotchPanel";
-import { SettingsPanel } from "./components/settings/SettingsPanel";
-import { OnboardingScreen } from "./components/onboarding/OnboardingScreen";
+import { TodoIsland } from "./components/notch/TodoIsland";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { initTodoStore } from "./store/useTodoStore";
 
 interface UpdateInfo { version: string; body?: string; }
 
 export default function App() {
-  const init = useStore((s) => s.init);
-  const sessions = useStore((s) => s.sessions);
-  const approvePermission = useStore((s) => s.approvePermission);
-  const answerQuestion = useStore((s) => s.answerQuestion);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [installing, setInstalling] = useState(false);
   const [windowLabel] = useState(() => getCurrentWebviewWindow().label);
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    try {
-      return window.localStorage.getItem("vibe-island:onboarding-complete") !== "1";
-    } catch {
-      return false;
-    }
-  });
-  const lastWaitingKey = useRef("");
 
-  useEffect(() => { init(); }, [init]);
+  useEffect(() => { initTodoStore(); }, []);
 
   useEffect(() => {
     if (windowLabel !== "notch") return;
     const win = getCurrentWindow();
-    if (showOnboarding) {
-      win.setSize(new LogicalSize(760, 720)).catch(() => {});
-      win.center().catch(() => {});
-      win.setShadow(true).catch(() => {});
-    } else {
-      win.setSize(new LogicalSize(420, 48)).catch(() => {});
-      win.center().catch(() => {});
-      win.setShadow(false).catch(() => {});
-    }
-  }, [showOnboarding, windowLabel]);
+    win.setSize(new LogicalSize(420, 48)).catch(() => {});
+    win.center().catch(() => {});
+    win.setShadow(false).catch(() => {});
+  }, [windowLabel]);
 
   // Listen for background update check result
   useEffect(() => {
     const unlisten = listen<UpdateInfo>("update-available", (e) => setUpdate(e.payload));
     return () => { unlisten.then(fn => fn()); };
   }, []);
-
-  // Keyboard shortcuts for approval/question
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      const approvalSession = sessions.find((s) => s.status === "waiting_for_approval");
-      const questionSession = sessions.find((s) => s.status === "waiting_for_answer");
-      if (e.key === "y" || e.key === "Y") {
-        if (approvalSession) { e.preventDefault(); approvePermission(approvalSession.id, "allow"); }
-      } else if (e.key === "n" || e.key === "N") {
-        if (approvalSession) { e.preventDefault(); approvePermission(approvalSession.id, "deny"); }
-      } else {
-        const num = parseInt(e.key, 10);
-        if (!isNaN(num) && num >= 1 && num <= 9 && questionSession) {
-          const toolInput = (questionSession.tool_input || {}) as Record<string, unknown>;
-          const questions = (toolInput.questions as Array<{ header: string; options?: string[] }>) || [];
-          const topQ = questions[0];
-          if (topQ?.options && topQ.options[num - 1] !== undefined) {
-            e.preventDefault();
-            answerQuestion(questionSession.id, { [topQ.header]: [String(num)] });
-          }
-        }
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [sessions, approvePermission, answerQuestion]);
-
-  useEffect(() => {
-    const waitingSessions = sessions.filter((s) => s.status === "waiting_for_approval" || s.status === "waiting_for_answer");
-    const waitingKey = waitingSessions.map((s) => `${s.id}:${s.status}`).sort().join("|");
-    if (!waitingKey || waitingKey === lastWaitingKey.current) return;
-    lastWaitingKey.current = waitingKey;
-    const config = useStore.getState().config;
-    const eventName = waitingSessions.some((s) => s.status === "waiting_for_answer") ? "input_required" : "permission_request";
-    if (config?.sound?.enabled === false) return;
-    if (eventName === "input_required" && config?.sound?.events?.input_required === false) return;
-    if (eventName === "permission_request" && config?.sound?.events?.permission_request === false) return;
-    invoke("play_sound", { soundName: eventName }).catch(() => {});
-  }, [sessions]);
 
   const handleInstall = async () => {
     setInstalling(true);
@@ -101,25 +40,16 @@ export default function App() {
   };
 
   if (windowLabel === "settings") {
-    return <SettingsPanel />;
-  }
-
-  if (showOnboarding) {
     return (
-      <OnboardingScreen
-        onComplete={() => {
-          try { window.localStorage.setItem("vibe-island:onboarding-complete", "1"); } catch {}
-          setShowOnboarding(false);
-        }}
-      />
+      <div className="w-screen h-screen flex items-center justify-center" style={{ background: "#1a1a1a", color: "#fff" }}>
+        Settings not available in todo mode
+      </div>
     );
   }
 
   return (
     <div className="w-screen h-screen flex justify-center">
-      <NotchPanel />
-
-      {/* Update notification — floats below the notch */}
+      <TodoIsland />
       {update && !installing && (
         <div
           style={{
