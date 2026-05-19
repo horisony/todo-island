@@ -172,6 +172,84 @@ async fn cleanup_sessions(state: tauri::State<'_, SharedState>) -> Result<usize,
     Ok(s.sessions.cleanup_idle(timeout).await)
 }
 
+// ─── Todo commands ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn get_todos(state: tauri::State<'_, todo::SharedTodoState>) -> Result<Vec<todo::TodoItem>, String> {
+    Ok(state.read().await.todos.clone())
+}
+
+#[tauri::command]
+async fn add_todo(
+    state: tauri::State<'_, todo::SharedTodoState>,
+    app: tauri::AppHandle,
+    text: String,
+) -> Result<todo::TodoItem, String> {
+    let item = todo::TodoItem {
+        id: uuid::Uuid::new_v4().to_string(),
+        text,
+        completed: false,
+        created_at: chrono::Utc::now().timestamp_millis(),
+    };
+    {
+        let mut s = state.write().await;
+        s.todos.push(item.clone());
+        todo::save_todos(&s)?;
+    }
+    let _ = app.emit("todo-update", ());
+    Ok(item)
+}
+
+#[tauri::command]
+async fn toggle_todo(
+    state: tauri::State<'_, todo::SharedTodoState>,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<todo::TodoItem, String> {
+    let mut updated = None;
+    {
+        let mut s = state.write().await;
+        if let Some(t) = s.todos.iter_mut().find(|t| t.id == id) {
+            t.completed = !t.completed;
+            updated = Some(t.clone());
+        }
+        todo::save_todos(&s)?;
+    }
+    let _ = app.emit("todo-update", ());
+    updated.ok_or_else(|| "Todo not found".to_string())
+}
+
+#[tauri::command]
+async fn delete_todo(
+    state: tauri::State<'_, todo::SharedTodoState>,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    {
+        let mut s = state.write().await;
+        s.todos.retain(|t| t.id != id);
+        todo::save_todos(&s)?;
+    }
+    let _ = app.emit("todo-update", ());
+    Ok(())
+}
+
+#[tauri::command]
+async fn clear_completed(
+    state: tauri::State<'_, todo::SharedTodoState>,
+    app: tauri::AppHandle,
+) -> Result<usize, String> {
+    let count = {
+        let mut s = state.write().await;
+        let c = s.todos.iter().filter(|t| t.completed).count();
+        s.todos.retain(|t| !t.completed);
+        todo::save_todos(&s)?;
+        c
+    };
+    let _ = app.emit("todo-update", ());
+    Ok(count)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Ensure run dir exists
@@ -226,11 +304,11 @@ pub fn run() {
             ssh_list_remotes,
             updater::check_for_update,
             updater::install_update,
-            todo::get_todos,
-            todo::add_todo,
-            todo::toggle_todo,
-            todo::delete_todo,
-            todo::clear_completed,
+            get_todos,
+            add_todo,
+            toggle_todo,
+            delete_todo,
+            clear_completed,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
